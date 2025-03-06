@@ -1,6 +1,8 @@
 import os
 import json
 import requests
+import asyncio  # Ensure async support for Telegram
+import threading
 from flask import Flask, request, jsonify
 from telegram import Bot
 from datetime import datetime
@@ -20,7 +22,7 @@ app = Flask(__name__)
 def home():
     return "Flask server is running!"
 
-# 🔹 Route: Handle Webhooks from Helius API (Fixes Bad JSON Issues)
+# 🔹 Route: Handle Webhooks from Helius API (Now Fully Fixed)
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
@@ -42,14 +44,9 @@ def webhook():
             print("❌ Invalid JSON structure: Expected a list")
             return jsonify({"error": "Invalid JSON format"}), 400
 
-        # Ensure each item in the list is a dictionary with required keys
-        for txn in data:
-            if not isinstance(txn, dict) or "tokenTransfers" not in txn:
-                print(f"⚠️ Skipping invalid transaction: {txn}")
-                continue
-
-        print("✅ Parsed Webhook Data Successfully")
-        process_transaction({"transactions": data})  # Convert list into a dict for processing
+        # Send quick response to Helius
+        print("✅ Fast Response Sent to Helius")
+        threading.Thread(target=process_transaction, args=({"transactions": data},)).start()
         return jsonify({"status": "received"}), 200
 
     except Exception as e:
@@ -88,8 +85,10 @@ def process_transaction(data):
                     print(f"⚠️ Skipping invalid token transfer in transaction {signature}")
                     continue  # Skip transfers with missing data
 
+                print(f"✅ Transaction detected: {signature}, {token_amount} {token_mint}")
+
                 if from_user in wallets:  # SELL action
-                    print(f"🔴 SELL detected for {from_user}: {token_amount} {token_mint}")
+                    print(f"🔴 SELL detected for {from_user}")
                     send_telegram_alert(
                         "SELL",
                         wallets[from_user]["name"],
@@ -101,7 +100,7 @@ def process_transaction(data):
                     )
 
                 elif to_user in wallets:  # BUY action
-                    print(f"🟢 BUY detected for {to_user}: {token_amount} {token_mint}")
+                    print(f"🟢 BUY detected for {to_user}")
                     send_telegram_alert(
                         "BUY",
                         wallets[to_user]["name"],
@@ -112,7 +111,7 @@ def process_transaction(data):
                         token_amount
                     )
 
-# 📌 Send Telegram Alert for Buys & Sells
+# 📌 Send Telegram Alert for Buys & Sells (Now Properly Awaiting `send_message()`)
 def send_telegram_alert(action, wallet_name, wallet_address, transaction, coin, emoji, amount):
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     action_emoji = "🟢" if action == "BUY" else "🔴"
@@ -128,7 +127,9 @@ def send_telegram_alert(action, wallet_name, wallet_address, transaction, coin, 
     )
     
     try:
-        response = bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        response = loop.run_until_complete(bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown"))
         print(f"✅ Telegram Alert Sent: {response}")
     except Exception as e:
         print(f"❌ Telegram Error: {e}")
