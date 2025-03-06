@@ -25,7 +25,7 @@ last_transactions = {}
 app = Flask(__name__)
 
 # 🔹 Route: Home Page for Debugging
-@app.route("/")
+@app.route("/", methods=["GET"])
 def home():
     return "Flask server is running!"
 
@@ -34,9 +34,10 @@ def home():
 def webhook():
     try:
         data = request.get_json(force=True)  # Force Flask to parse JSON
+        if data is None:
+            return jsonify({"error": "Invalid JSON format"}), 400
+        
         print("🔹 Received Webhook Data:", json.dumps(data, indent=2))
-
-        # Process Transaction Data
         process_transaction(data)
         return jsonify({"status": "received"}), 200
     except Exception as e:
@@ -110,4 +111,3 @@ def process_transaction(data):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
-
