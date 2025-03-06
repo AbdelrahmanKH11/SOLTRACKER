@@ -9,9 +9,6 @@ from datetime import datetime
 TELEGRAM_BOT_TOKEN = "7841195146:AAF4DbFsAqphttY1Tm3lWsqmTJh53nm_ykQ"
 TELEGRAM_CHAT_ID = 1119850623  # Replace with your actual chat ID
 
-# 🔹 Helius API Key
-HELIUS_API_KEY = "b8c7e3e5-d0ff-4532-8f28-84031a29a356"
-
 # 🔹 Wallets File
 WALLETS_FILE = "Kol_wallets.txt"
 
@@ -33,19 +30,26 @@ def webhook():
         raw_data = request.data.decode("utf-8")
         print("🔹 Raw Webhook Data Received:", raw_data)
 
-        # Attempt to parse JSON safely
+        # Try parsing JSON
         try:
-            data = json.loads(raw_data)  # Use json.loads instead of request.get_json()
+            data = json.loads(raw_data)  # Safe JSON parsing
         except json.JSONDecodeError:
             print("❌ JSON Parsing Error: Malformed request from Helius")
             return jsonify({"error": "Malformed JSON"}), 400
 
-        if not isinstance(data, dict) or "transactions" not in data:
-            print("❌ Invalid JSON structure: Missing 'transactions' key")
+        # Validate that the data structure matches what we expect
+        if not isinstance(data, list):
+            print("❌ Invalid JSON structure: Expected a list")
             return jsonify({"error": "Invalid JSON format"}), 400
 
-        print("✅ Parsed Webhook Data:", json.dumps(data, indent=2))
-        process_transaction(data)
+        # Ensure each item in the list is a dictionary with required keys
+        for txn in data:
+            if not isinstance(txn, dict) or "tokenTransfers" not in txn:
+                print(f"⚠️ Skipping invalid transaction: {txn}")
+                continue
+
+        print("✅ Parsed Webhook Data Successfully")
+        process_transaction({"transactions": data})  # Convert list into a dict for processing
         return jsonify({"status": "received"}), 200
 
     except Exception as e:
@@ -72,44 +76,41 @@ def process_transaction(data):
         signature = txn.get("signature", "UNKNOWN")
         print(f"📌 Processing Transaction: {signature}")  # Debugging print
 
-        # Ensure 'tokenTransfers' exists and is a list
-        if not isinstance(txn.get("tokenTransfers"), list):
-            print(f"⚠️ Skipping transaction {signature}: No valid 'tokenTransfers'")
-            continue
+        # Check if 'tokenTransfers' exists and is a list
+        if "tokenTransfers" in txn and isinstance(txn["tokenTransfers"], list):
+            for transfer in txn["tokenTransfers"]:
+                from_user = transfer.get("fromUserAccount")
+                to_user = transfer.get("toUserAccount")
+                token_amount = transfer.get("tokenAmount", 0)
+                token_mint = transfer.get("mint", "UNKNOWN")
 
-        for transfer in txn["tokenTransfers"]:
-            from_user = transfer.get("fromUserAccount")
-            to_user = transfer.get("toUserAccount")
-            token_amount = transfer.get("tokenAmount", 0)
-            token_mint = transfer.get("mint", "UNKNOWN")
+                if not from_user or not to_user or not token_mint or token_amount == 0:
+                    print(f"⚠️ Skipping invalid token transfer in transaction {signature}")
+                    continue  # Skip transfers with missing data
 
-            if not from_user or not to_user or not token_mint or token_amount == 0:
-                print(f"⚠️ Skipping invalid token transfer in transaction {signature}")
-                continue  # Skip transfers with missing data
+                if from_user in wallets:  # SELL action
+                    print(f"🔴 SELL detected for {from_user}: {token_amount} {token_mint}")
+                    send_telegram_alert(
+                        "SELL",
+                        wallets[from_user]["name"],
+                        from_user,
+                        txn,
+                        token_mint,
+                        wallets[from_user].get("emoji", ""),
+                        token_amount
+                    )
 
-            if from_user in wallets:  # SELL action
-                print(f"🔴 SELL detected for {from_user}: {token_amount} {token_mint}")
-                send_telegram_alert(
-                    "SELL",
-                    wallets[from_user]["name"],
-                    from_user,
-                    txn,
-                    token_mint,
-                    wallets[from_user].get("emoji", ""),
-                    token_amount
-                )
-
-            elif to_user in wallets:  # BUY action
-                print(f"🟢 BUY detected for {to_user}: {token_amount} {token_mint}")
-                send_telegram_alert(
-                    "BUY",
-                    wallets[to_user]["name"],
-                    to_user,
-                    txn,
-                    token_mint,
-                    wallets[to_user].get("emoji", ""),
-                    token_amount
-                )
+                elif to_user in wallets:  # BUY action
+                    print(f"🟢 BUY detected for {to_user}: {token_amount} {token_mint}")
+                    send_telegram_alert(
+                        "BUY",
+                        wallets[to_user]["name"],
+                        to_user,
+                        txn,
+                        token_mint,
+                        wallets[to_user].get("emoji", ""),
+                        token_amount
+                    )
 
 # 📌 Send Telegram Alert for Buys & Sells
 def send_telegram_alert(action, wallet_name, wallet_address, transaction, coin, emoji, amount):
