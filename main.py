@@ -50,62 +50,56 @@ def load_wallets():
         with open(WALLETS_FILE, "r", encoding="utf-8") as file:
             wallets_data = json.load(file)
         wallets = {wallet["address"]: wallet for wallet in wallets_data}
+        print("✅ Loaded Wallets:", wallets.keys())  # Debugging print
         return wallets
     except Exception as e:
         print(f"❌ Error loading wallets: {e}")
         return {}
 
-# 📌 Fetch Recent Transactions from Helius API
-def fetch_recent_transactions(wallet_address: str, limit: int = 5) -> list:
-    url = HELIUS_TRANSACTIONS_URL.format(wallet_address)
-    response = requests.get(url)
-    
-    if response.status_code == 200:
-        return response.json().get("transactions", [])
-    else:
-        print(f"⚠️ Failed to fetch transactions for {wallet_address}: {response.status_code}")
-        return []
+# 📌 Process Incoming Transaction Data (Only Buys & Sells)
+def process_transaction(data):
+    wallets = load_wallets()  # Load wallets from file
 
-# 📌 Extract Coin Symbol from Transaction
-def extract_coin_info(transaction: dict) -> str:
-    instructions = transaction.get("instructions", [])
-    for instruction in instructions:
-        if instruction.get("type") == "transfer":
-            return instruction.get("tokenSymbol", "Unknown Coin")
-    return "Unknown Coin"
+    for txn in data.get("transactions", []):
+        for account_data in txn.get("accounts", []):
+            if "tokenBalanceChanges" in account_data and account_data["tokenBalanceChanges"]:
+                for change in account_data["tokenBalanceChanges"]:
+                    user_account = change.get("userAccount")
+                    token_amount = int(change["rawTokenAmount"]["tokenAmount"]) / (10 ** int(change["rawTokenAmount"]["decimals"]))
 
-# 📌 Send Telegram Alert
-def send_telegram_alert(wallet_name, wallet_address, transaction, coin, emoji):
+                    if user_account in wallets:
+                        action = "BUY" if token_amount > 0 else "SELL"
+
+                        send_telegram_alert(
+                            action,
+                            wallets[user_account]["name"],
+                            user_account,
+                            txn,
+                            change["mint"],
+                            wallets[user_account].get("emoji", ""),
+                            abs(token_amount),  # Always send a positive amount
+                        )
+
+# 📌 Send Telegram Alert for Buys & Sells
+def send_telegram_alert(action, wallet_name, wallet_address, transaction, coin, emoji, amount):
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
+    action_emoji = "🟢" if action == "BUY" else "🔴"
+    
     message = (
-        f"🚀 *New Transaction Alert* 🚀\n\n"
-        f"👤 *Wallet Name:* {wallet_name} {emoji}\n"
-        f"📍 *Wallet Address:* `{wallet_address[:6]}...{wallet_address[-6:]}`\n"
+        f"{action_emoji} *{action} Alert!* {action_emoji}\n\n"
+        f"👤 *Wallet:* {wallet_name} {emoji}\n"
+        f"📍 *Address:* `{wallet_address[:6]}...{wallet_address[-6:]}`\n"
+        f"💰 *Amount:* {amount}\n"
+        f"🪙 *Token:* `{coin}`\n"
         f"🔗 *Transaction:* `{transaction['signature'][:10]}...{transaction['signature'][-10:]}`\n"
         f"⏳ *Time:* {datetime.utcfromtimestamp(transaction['blockTime']).strftime('%Y-%m-%d %H:%M:%S')}\n"
-        f"💰 *Coin:* {coin}\n"
-        f"📝 *Description:* {transaction.get('description', 'N/A')}"
     )
-    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
-
-# 📌 Process Incoming Transaction Data
-def process_transaction(data):
-    wallets = load_wallets()
     
-    for txn in data.get("transactions", []):
-        wallet_address = txn.get("account", None)
-        
-        if wallet_address and wallet_address in wallets:
-            if wallet_address not in last_transactions or txn["signature"] != last_transactions[wallet_address]:
-                coin = extract_coin_info(txn)
-                send_telegram_alert(
-                    wallets[wallet_address]["name"],
-                    wallet_address,
-                    txn,
-                    coin,
-                    wallets[wallet_address].get("emoji", ""),
-                )
-                last_transactions[wallet_address] = txn["signature"]
+    try:
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
+        print(f"✅ {action} Alert Sent for {wallet_name}")
+    except Exception as e:
+        print(f"❌ Telegram Error: {e}")
 
 # 🔥 Run Flask Server
 if __name__ == "__main__":
