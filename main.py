@@ -61,6 +61,8 @@ def process_transaction(data):
     wallets = load_wallets()  # Load wallets from file
 
     for txn in data.get("transactions", []):
+        print(f"📌 Processing Transaction: {txn['signature']}")  # Debugging print
+
         for account_data in txn.get("accounts", []):
             if "tokenBalanceChanges" in account_data and account_data["tokenBalanceChanges"]:
                 for change in account_data["tokenBalanceChanges"]:
@@ -69,6 +71,7 @@ def process_transaction(data):
 
                     if user_account in wallets:
                         action = "BUY" if token_amount > 0 else "SELL"
+                        print(f"✅ {action} detected for {user_account}: {token_amount} {change['mint']}")  # Debugging print
 
                         send_telegram_alert(
                             action,
@@ -79,6 +82,7 @@ def process_transaction(data):
                             wallets[user_account].get("emoji", ""),
                             abs(token_amount),  # Always send a positive amount
                         )
+
 
 # 📌 Send Telegram Alert for Buys & Sells
 def send_telegram_alert(action, wallet_name, wallet_address, transaction, coin, emoji, amount):
