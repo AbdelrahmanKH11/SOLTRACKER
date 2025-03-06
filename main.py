@@ -33,15 +33,21 @@ def home():
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        data = request.get_json(force=True)  # Force Flask to parse JSON
-        if data is None:
+        data = request.get_json(force=True)
+
+        # Debugging: Print raw webhook data
+        print("🔹 Raw Webhook Data Received:", json.dumps(data, indent=2))
+
+        if not data:
+            print("❌ No JSON data received!")
             return jsonify({"error": "Invalid JSON format"}), 400
-        
-        print("🔹 Received Webhook Data:", json.dumps(data, indent=2))
+
+        print("✅ Parsed Webhook Data:", json.dumps(data, indent=2))
         process_transaction(data)
         return jsonify({"status": "received"}), 200
+
     except Exception as e:
-        print("❌ JSON Parsing Error:", str(e))
+        print(f"❌ Webhook Error: {str(e)}")
         return jsonify({"error": "Invalid JSON"}), 400
 
 # 📌 Load Wallets from File
@@ -62,27 +68,36 @@ def process_transaction(data):
 
     for txn in data.get("transactions", []):
         print(f"📌 Processing Transaction: {txn['signature']}")  # Debugging print
+        
+        # Check if transaction contains token transfers
+        if "tokenTransfers" in txn and txn["tokenTransfers"]:
+            for transfer in txn["tokenTransfers"]:
+                from_user = transfer["fromUserAccount"]
+                to_user = transfer["toUserAccount"]
+                token_amount = transfer["tokenAmount"]
+                token_mint = transfer["mint"]
 
-        for account_data in txn.get("accounts", []):
-            if "tokenBalanceChanges" in account_data and account_data["tokenBalanceChanges"]:
-                for change in account_data["tokenBalanceChanges"]:
-                    user_account = change.get("userAccount")
-                    token_amount = int(change["rawTokenAmount"]["tokenAmount"]) / (10 ** int(change["rawTokenAmount"]["decimals"]))
+                if from_user in wallets:  # SELL action
+                    send_telegram_alert(
+                        "SELL",
+                        wallets[from_user]["name"],
+                        from_user,
+                        txn,
+                        token_mint,
+                        wallets[from_user].get("emoji", ""),
+                        token_amount
+                    )
 
-                    if user_account in wallets:
-                        action = "BUY" if token_amount > 0 else "SELL"
-                        print(f"✅ {action} detected for {user_account}: {token_amount} {change['mint']}")  # Debugging print
-
-                        send_telegram_alert(
-                            action,
-                            wallets[user_account]["name"],
-                            user_account,
-                            txn,
-                            change["mint"],
-                            wallets[user_account].get("emoji", ""),
-                            abs(token_amount),  # Always send a positive amount
-                        )
-
+                elif to_user in wallets:  # BUY action
+                    send_telegram_alert(
+                        "BUY",
+                        wallets[to_user]["name"],
+                        to_user,
+                        txn,
+                        token_mint,
+                        wallets[to_user].get("emoji", ""),
+                        token_amount
+                    )
 
 # 📌 Send Telegram Alert for Buys & Sells
 def send_telegram_alert(action, wallet_name, wallet_address, transaction, coin, emoji, amount):
@@ -96,7 +111,7 @@ def send_telegram_alert(action, wallet_name, wallet_address, transaction, coin, 
         f"💰 *Amount:* {amount}\n"
         f"🪙 *Token:* `{coin}`\n"
         f"🔗 *Transaction:* `{transaction['signature'][:10]}...{transaction['signature'][-10:]}`\n"
-        f"⏳ *Time:* {datetime.utcfromtimestamp(transaction['blockTime']).strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"⏳ *Time:* {datetime.utcfromtimestamp(transaction['timestamp']).strftime('%Y-%m-%d %H:%M:%S')}\n"
     )
     
     try:
@@ -104,7 +119,6 @@ def send_telegram_alert(action, wallet_name, wallet_address, transaction, coin, 
         print(f"✅ Telegram Alert Sent: {response}")
     except Exception as e:
         print(f"❌ Telegram Error: {e}")
-
 
 # 🔥 Run Flask Server
 if __name__ == "__main__":
