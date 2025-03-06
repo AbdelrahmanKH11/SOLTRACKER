@@ -1,9 +1,9 @@
-[    {        "name": "Cupsey",
-        "address": "suqh5sHtr8H
-yJ7q8scBimULPkPpA557prMG47xCHQfK",
+[
+    {
+        "name": "Cupsey",
+        "address": "suqh5sHtr8HyJ7q8scBimULPkPpA557prMG47xCHQfK",
         "emoji": "☕️",
         "tags": []
-
     },
     {
         "name": "Terp",
@@ -1958,4 +1958,3 @@ yJ7q8scBimULPkPpA557prMG47xCHQfK",
         "tags": []
     }
 ]
-
