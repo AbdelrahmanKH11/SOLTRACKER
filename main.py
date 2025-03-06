@@ -12,14 +12,8 @@ TELEGRAM_CHAT_ID = 1119850623  # Replace with your actual chat ID
 # 🔹 Helius API Key
 HELIUS_API_KEY = "b8c7e3e5-d0ff-4532-8f28-84031a29a356"
 
-# 🔹 Helius API Endpoint
-HELIUS_TRANSACTIONS_URL = "https://api.helius.xyz/v0/addresses/{}/transactions?api-key=" + HELIUS_API_KEY
-
 # 🔹 Wallets File
 WALLETS_FILE = "Kol_wallets.txt"
-
-# 🔹 Dictionary to Track Last Seen Transactions
-last_transactions = {}
 
 # 🔹 Initialize Flask App
 app = Flask(__name__)
@@ -29,17 +23,25 @@ app = Flask(__name__)
 def home():
     return "Flask server is running!"
 
-# 🔹 Route: Handle Webhooks from Helius API
+# 🔹 Route: Handle Webhooks from Helius API (Fixes Bad JSON Issues)
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        data = request.get_json(force=True)
+        print("🔹 Headers Received:", request.headers)
+        
+        # Read raw data before parsing
+        raw_data = request.data.decode("utf-8")
+        print("🔹 Raw Webhook Data Received:", raw_data)
 
-        # Debugging: Print raw webhook data
-        print("🔹 Raw Webhook Data Received:", json.dumps(data, indent=2))
+        # Attempt to parse JSON safely
+        try:
+            data = json.loads(raw_data)  # Use json.loads instead of request.get_json()
+        except json.JSONDecodeError:
+            print("❌ JSON Parsing Error: Malformed request from Helius")
+            return jsonify({"error": "Malformed JSON"}), 400
 
-        if not data:
-            print("❌ No JSON data received!")
+        if not isinstance(data, dict) or "transactions" not in data:
+            print("❌ Invalid JSON structure: Missing 'transactions' key")
             return jsonify({"error": "Invalid JSON format"}), 400
 
         print("✅ Parsed Webhook Data:", json.dumps(data, indent=2))
@@ -48,7 +50,7 @@ def webhook():
 
     except Exception as e:
         print(f"❌ Webhook Error: {str(e)}")
-        return jsonify({"error": "Invalid JSON"}), 400
+        return jsonify({"error": "Internal Server Error"}), 500
 
 # 📌 Load Wallets from File
 def load_wallets():
@@ -67,37 +69,47 @@ def process_transaction(data):
     wallets = load_wallets()  # Load wallets from file
 
     for txn in data.get("transactions", []):
-        print(f"📌 Processing Transaction: {txn['signature']}")  # Debugging print
-        
-        # Check if transaction contains token transfers
-        if "tokenTransfers" in txn and txn["tokenTransfers"]:
-            for transfer in txn["tokenTransfers"]:
-                from_user = transfer["fromUserAccount"]
-                to_user = transfer["toUserAccount"]
-                token_amount = transfer["tokenAmount"]
-                token_mint = transfer["mint"]
+        signature = txn.get("signature", "UNKNOWN")
+        print(f"📌 Processing Transaction: {signature}")  # Debugging print
 
-                if from_user in wallets:  # SELL action
-                    send_telegram_alert(
-                        "SELL",
-                        wallets[from_user]["name"],
-                        from_user,
-                        txn,
-                        token_mint,
-                        wallets[from_user].get("emoji", ""),
-                        token_amount
-                    )
+        # Ensure 'tokenTransfers' exists and is a list
+        if not isinstance(txn.get("tokenTransfers"), list):
+            print(f"⚠️ Skipping transaction {signature}: No valid 'tokenTransfers'")
+            continue
 
-                elif to_user in wallets:  # BUY action
-                    send_telegram_alert(
-                        "BUY",
-                        wallets[to_user]["name"],
-                        to_user,
-                        txn,
-                        token_mint,
-                        wallets[to_user].get("emoji", ""),
-                        token_amount
-                    )
+        for transfer in txn["tokenTransfers"]:
+            from_user = transfer.get("fromUserAccount")
+            to_user = transfer.get("toUserAccount")
+            token_amount = transfer.get("tokenAmount", 0)
+            token_mint = transfer.get("mint", "UNKNOWN")
+
+            if not from_user or not to_user or not token_mint or token_amount == 0:
+                print(f"⚠️ Skipping invalid token transfer in transaction {signature}")
+                continue  # Skip transfers with missing data
+
+            if from_user in wallets:  # SELL action
+                print(f"🔴 SELL detected for {from_user}: {token_amount} {token_mint}")
+                send_telegram_alert(
+                    "SELL",
+                    wallets[from_user]["name"],
+                    from_user,
+                    txn,
+                    token_mint,
+                    wallets[from_user].get("emoji", ""),
+                    token_amount
+                )
+
+            elif to_user in wallets:  # BUY action
+                print(f"🟢 BUY detected for {to_user}: {token_amount} {token_mint}")
+                send_telegram_alert(
+                    "BUY",
+                    wallets[to_user]["name"],
+                    to_user,
+                    txn,
+                    token_mint,
+                    wallets[to_user].get("emoji", ""),
+                    token_amount
+                )
 
 # 📌 Send Telegram Alert for Buys & Sells
 def send_telegram_alert(action, wallet_name, wallet_address, transaction, coin, emoji, amount):
