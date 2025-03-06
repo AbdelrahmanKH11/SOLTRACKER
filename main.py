@@ -96,10 +96,11 @@ def send_telegram_alert(action, wallet_name, wallet_address, transaction, coin, 
     )
     
     try:
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
-        print(f"✅ {action} Alert Sent for {wallet_name}")
+        response = bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
+        print(f"✅ Telegram Alert Sent: {response}")
     except Exception as e:
         print(f"❌ Telegram Error: {e}")
+
 
 # 🔥 Run Flask Server
 if __name__ == "__main__":
