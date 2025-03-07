@@ -165,19 +165,21 @@ def check_strong_alerts():
             send_strong_alert("🚨 STRONG SELL ALERT 🚨", data["name"], data["sells"])
             token_activity[token]["sells"] = 0  
 
-# 📌 Send Strong Buy/Sell Alerts
-def send_strong_alert(alert_type, token_name, count):
-    bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    message = f"{alert_type} 🚀\n\n🔥 *{count} wallets traded {token_name}!* 🔥\n"
+# 📌 Async Send Telegram Alerts
+async def send_message_async(bot, chat_id, message):
+    await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
 
-    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
-
-# 📌 Send Telegram Alert for Buys & Sells
+# 📌 Send Telegram Alerts
 def send_telegram_alert(action, wallet_name, token_name, amount, usd_value):
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     message = f"{action} Alert! 🚀\n\n👤 Wallet: {wallet_name}\n🪙 Token: {token_name}\n💰 Amount: {amount}\n💵 USD Value: ${usd_value}\n"
+    asyncio.run(send_message_async(bot, TELEGRAM_CHAT_ID, message))
 
-    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
+# 📌 Send Strong Alerts
+def send_strong_alert(alert_type, token_name, count):
+    bot = Bot(token=TELEGRAM_BOT_TOKEN)
+    message = f"{alert_type} 🚀\n\n🔥 *{count} wallets traded {token_name}!* 🔥\n"
+    asyncio.run(send_message_async(bot, TELEGRAM_CHAT_ID, message))
 
 # 🔥 Run Flask Server
 if __name__ == "__main__":
