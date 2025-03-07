@@ -170,11 +170,14 @@ def send_strong_alert(alert_type, token_name, count):
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     message = f"{alert_type} 🚀\n\n🔥 *{count} wallets traded {token_name}!* 🔥\n"
 
-    try:
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
-        print(f"✅ Sent Strong Alert: {alert_type} for {token_name} ({count} trades)")
-    except Exception as e:
-        print(f"❌ Telegram Error: {e}")
+    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
+
+# 📌 Send Telegram Alert for Buys & Sells
+def send_telegram_alert(action, wallet_name, token_name, amount, usd_value):
+    bot = Bot(token=TELEGRAM_BOT_TOKEN)
+    message = f"{action} Alert! 🚀\n\n👤 Wallet: {wallet_name}\n🪙 Token: {token_name}\n💰 Amount: {amount}\n💵 USD Value: ${usd_value}\n"
+
+    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
 
 # 🔥 Run Flask Server
 if __name__ == "__main__":
