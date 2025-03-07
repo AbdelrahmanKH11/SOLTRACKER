@@ -92,7 +92,7 @@ def get_sol_price_in_usd():
         response = requests.post(url, json={"tokens": ["So11111111111111111111111111111111111111112"]})
         data = response.json()
         return data["prices"]["So11111111111111111111111111111111111111112"]["price"] if "prices" in data else None
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         print(f"⚠️ Error fetching SOL price from Helius: {e}")
         return None
 
@@ -150,7 +150,7 @@ def process_transaction(data):
     # ✅ Check for Strong Buy/Sell Alerts
     check_strong_alerts()
 
-# 📌 Function to Check if 3+ Buys/Sells Happened in a Time Window
+# 📌 Check if 3+ Buys/Sells Happened in a Time Window
 def check_strong_alerts():
     global token_activity
     current_time = time.time()
@@ -165,18 +165,16 @@ def check_strong_alerts():
             send_strong_alert("🚨 STRONG SELL ALERT 🚨", data["name"], data["sells"])
             token_activity[token]["sells"] = 0  
 
-# 📌 Send Telegram Alert
-def send_telegram_alert(action, wallet_name, token_name, amount, usd_value):
+# 📌 Send Strong Buy/Sell Alerts
+def send_strong_alert(alert_type, token_name, count):
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    message = (
-        f"{action} Alert! 🚀\n\n"
-        f"👤 Wallet: {wallet_name}\n"
-        f"🪙 Token: {token_name}\n"
-        f"💰 Amount: {amount}\n"
-        f"💵 USD Value: ${usd_value}\n"
-    )
+    message = f"{alert_type} 🚀\n\n🔥 *{count} wallets traded {token_name}!* 🔥\n"
 
-    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
+    try:
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
+        print(f"✅ Sent Strong Alert: {alert_type} for {token_name} ({count} trades)")
+    except Exception as e:
+        print(f"❌ Telegram Error: {e}")
 
 # 🔥 Run Flask Server
 if __name__ == "__main__":
