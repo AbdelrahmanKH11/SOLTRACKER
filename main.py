@@ -67,23 +67,6 @@ def load_wallets():
         print(f"❌ Error loading wallets: {e}")
         return {}
 
-# 📌 Get Token Info (Name & Price in SOL) from Helius
-def get_token_info(token_mint):
-    url = f"https://api.helius.xyz/v0/tokens/prices?api-key={HELIUS_API_KEY}"
-
-    try:
-        response = requests.post(url, json={"tokens": [token_mint]})
-        data = response.json()
-
-        if "prices" in data and token_mint in data["prices"]:
-            token_data = data["prices"][token_mint]
-            return token_data.get("name", "Unknown Token"), token_data["price"]
-        return "Unknown Token", None
-
-    except requests.exceptions.RequestException as e:
-        print(f"⚠️ Error fetching token info from Helius: {e}")
-        return "Unknown Token", None
-
 # 📌 Get SOL Price in USD
 def get_sol_price_in_usd():
     url = f"https://api.helius.xyz/v0/tokens/prices?api-key={HELIUS_API_KEY}"
@@ -125,27 +108,23 @@ def process_transaction(data):
                     print(f"⚠️ Skipping USDC transaction: {signature}")
                     continue
 
-                # ✅ Get Token Name & Price in SOL
-                token_name, token_price_in_sol = get_token_info(token_mint)
+                # ✅ Get SOL Price in USD
                 sol_price_in_usd = get_sol_price_in_usd()
 
-                # ✅ Convert Token Amount to USD
-                if token_price_in_sol and sol_price_in_usd:
-                    usd_value = round(token_amount * token_price_in_sol * sol_price_in_usd, 2)
-                else:
-                    usd_value = "Unknown"
+                # ✅ Convert Token Amount to USD (assuming 1:1 SOL ratio)
+                usd_value = round(token_amount * sol_price_in_usd, 2) if sol_price_in_usd else "N/A"
 
                 # ✅ Store buy/sell activity
                 if token_mint not in token_activity:
-                    token_activity[token_mint] = {"name": token_name, "buys": 0, "sells": 0, "timestamps": []}
+                    token_activity[token_mint] = {"buys": 0, "sells": 0, "timestamps": []}
 
                 if from_user in wallets:
                     token_activity[token_mint]["sells"] += 1
-                    send_telegram_alert("SELL", wallets[from_user]["name"], token_name, token_amount, usd_value)
+                    send_telegram_alert("SELL", wallets[from_user]["name"], token_mint, token_amount, usd_value)
 
                 elif to_user in wallets:
                     token_activity[token_mint]["buys"] += 1
-                    send_telegram_alert("BUY", wallets[to_user]["name"], token_name, token_amount, usd_value)
+                    send_telegram_alert("BUY", wallets[to_user]["name"], token_mint, token_amount, usd_value)
 
     # ✅ Check for Strong Buy/Sell Alerts
     check_strong_alerts()
@@ -158,28 +137,40 @@ def check_strong_alerts():
 
     for token, data in token_activity.items():
         if data["buys"] >= 3:
-            send_strong_alert("🔥 STRONG BUY ALERT 🔥", data["name"], data["buys"])
+            send_strong_alert("🔥 STRONG BUY ALERT 🔥", token, data["buys"])
             token_activity[token]["buys"] = 0  
 
         if data["sells"] >= 3:
-            send_strong_alert("🚨 STRONG SELL ALERT 🚨", data["name"], data["sells"])
+            send_strong_alert("🚨 STRONG SELL ALERT 🚨", token, data["sells"])
             token_activity[token]["sells"] = 0  
 
-# 📌 Async Send Telegram Alerts
-async def send_message_async(bot, chat_id, message):
-    await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
-
 # 📌 Send Telegram Alerts
-def send_telegram_alert(action, wallet_name, token_name, amount, usd_value):
+def send_telegram_alert(action, wallet_name, token_mint, amount, usd_value):
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    message = f"{action} Alert! 🚀\n\n👤 Wallet: {wallet_name}\n🪙 Token: {token_name}\n💰 Amount: {amount}\n💵 USD Value: ${usd_value}\n"
-    asyncio.run(send_message_async(bot, TELEGRAM_CHAT_ID, message))
+    action_emoji = "🟢" if action == "BUY" else "🔴"
 
-# 📌 Send Strong Alerts
-def send_strong_alert(alert_type, token_name, count):
+    message = (
+        f"{action_emoji} *{action} Alert!* {action_emoji}\n\n"
+        f"👤 *Wallet:* {wallet_name}\n"
+        f"📜 *Token Address:* `{token_mint}`\n"
+        f"💰 *Amount:* {amount}\n"
+        f"💵 *USD Value:* ${usd_value}\n"
+    )
+
+    asyncio.run(bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown"))
+
+# 📌 Send Strong Buy/Sell Alerts (Use Token Address Instead of Name)
+def send_strong_alert(alert_type, token_mint, count):
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    message = f"{alert_type} 🚀\n\n🔥 *{count} wallets traded {token_name}!* 🔥\n"
-    asyncio.run(send_message_async(bot, TELEGRAM_CHAT_ID, message))
+    alert_emoji = "🔥" if "BUY" in alert_type else "🚨"
+
+    message = (
+        f"{alert_emoji} *{alert_type}* {alert_emoji}\n\n"
+        f"📜 *Token Address:* `{token_mint}`\n"
+        f"🔥 *{count} wallets traded this token!*\n"
+    )
+
+    asyncio.run(bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown"))
 
 # 🔥 Run Flask Server
 if __name__ == "__main__":
